@@ -1,6 +1,8 @@
 package com.jrtec.grabadora
 
 import android.Manifest
+import android.annotation.SuppressLint
+import android.bluetooth.BluetoothDevice
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -13,6 +15,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.View
+import android.widget.ImageButton
 import android.widget.Toast
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
@@ -40,7 +43,7 @@ class MainActivity : AppCompatActivity() {
         registerReceiver(object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
                 val state = intent.getIntExtra(AudioManager.EXTRA_SCO_AUDIO_STATE, -1)
-                Log.d( "BLUETOOTH","Audio SCO state: $state")
+                Log.d( "BLUETOOTH HOME","Audio SCO state: $state")
                 if (AudioManager.SCO_AUDIO_STATE_CONNECTED == state) {
                     /*
                  * Now the connection has been established to the bluetooth device.
@@ -51,13 +54,19 @@ class MainActivity : AppCompatActivity() {
                  * After finishing, don't forget to unregister this receiver and
                  * to stop the bluetooth connection with am.stopBluetoothSco();
                  */
-                    unregisterReceiver(this)
-                }
+//                    unregisterReceiver(this)
+                    Log.d("BLUETOOTH HOME", "Audion Connected")
+                    val am = getSystemService(AUDIO_SERVICE) as AudioManager
+                    am.mode= AudioManager.MODE_IN_COMMUNICATION
+                    am.isBluetoothScoOn=true
+                    am.startBluetoothSco()
+                    Log.i("BLUETOOTH HOME", " Model   ${am.mode}")                }
             }
-        }, IntentFilter(AudioManager.ACTION_SCO_AUDIO_STATE_CHANGED))
+        }, IntentFilter().apply{addAction(AudioManager.ACTION_SCO_AUDIO_STATE_UPDATED)})
 
         Log.d("BLUETOOTH", "starting bluetooth")
         am.startBluetoothSco()
+
 
         if (ContextCompat.checkSelfPermission(
                 applicationContext,
@@ -66,6 +75,8 @@ class MainActivity : AppCompatActivity() {
                 applicationContext, Manifest.permission.RECORD_AUDIO
             ) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(
                 applicationContext, Manifest.permission.READ_EXTERNAL_STORAGE
+            ) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(
+                applicationContext, Manifest.permission.BLUETOOTH_CONNECT
             ) != PackageManager.PERMISSION_GRANTED
         ) {
             ActivityCompat.requestPermissions(
@@ -74,11 +85,20 @@ class MainActivity : AppCompatActivity() {
                     Manifest.permission.WRITE_EXTERNAL_STORAGE,
                     Manifest.permission.READ_EXTERNAL_STORAGE,
                     Manifest.permission.RECORD_AUDIO,
+                    Manifest.permission.BLUETOOTH_CONNECT,
                     Manifest.permission.INTERNET,
                 ),
                 1000
             )
         }
+
+        val filter = IntentFilter().apply {
+            addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
+            addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
+            addAction(AudioManager.ACTION_SCO_AUDIO_STATE_UPDATED)
+        }
+        registerReceiver(broadCastReceiverBluetooth, filter)
+
         requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 1)
         binding.btnRecord.setOnClickListener {
             binding.btnStop.visibility = View.VISIBLE
@@ -171,6 +191,29 @@ class MainActivity : AppCompatActivity() {
         player?.start()
 
 
+    }
+    private val broadCastReceiverBluetooth = object : BroadcastReceiver() {
+        @SuppressLint("ResourceType")
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val action = intent?.action
+            val am = getSystemService(AUDIO_SERVICE) as AudioManager
+            when (action) {
+                BluetoothDevice.ACTION_ACL_CONNECTED -> {
+                    Handler(Looper.getMainLooper()).postDelayed(
+                        {
+                            am.startBluetoothSco()
+                            val state = intent.getIntExtra(AudioManager.EXTRA_SCO_AUDIO_STATE, -1)
+                            Log.i("BLUETOOTH HOME","************ AUDIO $state *************")
+                        },2000)
+                }
+                BluetoothDevice.ACTION_ACL_DISCONNECTED -> {
+                    Log.i("BLUETOOTH HOME","************ DISCONECTED *************")
+                    am.mode= AudioManager.MODE_NORMAL
+                    Log.i("BLUETOOTH HOME", " Model   ${am.mode}")
+
+                }
+            }
+        }
     }
 
 }
