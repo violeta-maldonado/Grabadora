@@ -4,6 +4,7 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="@color/white"
     tools:context=".MainActivity">
 
     <TextView
@@ -56,4 +57,19 @@
         app:layout_constraintTop_toTopOf="parent"
         android:background="@drawable/android" />
 
+    <Button
+        android:id="@+id/button_open_popup"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Abrir pop up"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/btnPlay" />
+
+    <VideoView
+        android:id="@+id/video_view_popup"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone"
+        />
 </androidx.constraintlayout.widget.ConstraintLayout>

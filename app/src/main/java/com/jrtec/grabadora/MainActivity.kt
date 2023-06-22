@@ -7,10 +7,10 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.media.*
-import android.os.Build
-import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
+import android.os.*
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import android.util.Log
 import android.view.View
 import android.widget.Toast
@@ -22,11 +22,14 @@ import com.jrtec.grabadora.databinding.ActivityMainBinding
 import java.io.File
 import java.io.IOException
 
+
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
+    var formattedSpeech: StringBuffer = StringBuffer()
     var recorder: MediaRecorder? = null
     var player: MediaPlayer? = null
-    var archivo: File? = null
+    private lateinit var recognizer: SpeechRecognizer
+    private val archivo = Environment.getExternalStorageDirectory().absolutePath + "/audio.3gp"
 
     @RequiresApi(Build.VERSION_CODES.P)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -42,15 +45,6 @@ class MainActivity : AppCompatActivity() {
                 val state = intent.getIntExtra(AudioManager.EXTRA_SCO_AUDIO_STATE, -1)
                 Log.d( "BLUETOOTH","Audio SCO state: $state")
                 if (AudioManager.SCO_AUDIO_STATE_CONNECTED == state) {
-                    /*
-                 * Now the connection has been established to the bluetooth device.
-                 * Record audio or whatever (on another thread).With AudioRecord you can record with an object created like this:
-                 * new AudioRecord(MediaRecorder.AudioSource.MIC, 8000, AudioFormat.CHANNEL_CONFIGURATION_MONO,
-                 * AudioFormat.ENCODING_PCM_16BIT, audioBufferSize);
-                 *
-                 * After finishing, don't forget to unregister this receiver and
-                 * to stop the bluetooth connection with am.stopBluetoothSco();
-                 */
                     unregisterReceiver(this)
                 }
             }
@@ -83,7 +77,7 @@ class MainActivity : AppCompatActivity() {
         binding.btnRecord.setOnClickListener {
             binding.btnStop.visibility = View.VISIBLE
             binding.btnRecord.visibility = View.INVISIBLE
-            startRecording()
+            startListening()
         }
         binding.btnStop.setOnClickListener{
             binding.btnRecord.visibility = View.VISIBLE
@@ -93,85 +87,162 @@ class MainActivity : AppCompatActivity() {
         binding.btnPlay.setOnClickListener{
             startPlaying()
         }
+        setupMediaRecorder()
     }
-    @RequiresApi(Build.VERSION_CODES.S)
-    private fun bleConnection(){
-        val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        var speakerDevice: AudioDeviceInfo? = null
-        val devices: List<AudioDeviceInfo> = audioManager.availableCommunicationDevices
-        audioManager.mode = AudioManager.MODE_IN_CALL
-        for (device in devices) {
-            Log.i("device ", device.toString())
-            Log.i("device type", device.type.toString())
-            if (device!!.type == AudioDeviceInfo.TYPE_BUILTIN_MIC) {
-                speakerDevice = device
-                break
-            }
-        }
-        if (speakerDevice != null) {
-            // Turn speakerphone ON.
-            Log.i("speakerDevice ", speakerDevice.toString())
-            val result = audioManager.setCommunicationDevice(speakerDevice)
-            Log.i("result ", result.toString())
-            if (!result) {
-                // Handle error.
-            }
-            // Turn speakerphone OFF.
-            //audioManager.clearCommunicationDevice()
-        }
-    }
-    private fun startRecording() {
-        Toast.makeText(applicationContext, "Recording", Toast.LENGTH_LONG).show()
-        try {
-            archivo = File.createTempFile("temporal", ".m4a", applicationContext.cacheDir)
-        }catch (e:IOException){
 
-            Log.e("error archive", "$e")
-        }
-        recorder = MediaRecorder().apply {
-            setAudioSource(MediaRecorder.AudioSource.MIC)
-            setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-            setOutputFile(archivo!!.absolutePath)
-            setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-            try {
-                prepare()
-                start()
-            }catch (e:IllegalStateException ) {
-                Log.e("error", "prepare() failed ${e.printStackTrace()}")
-            } catch (e: IOException) {
-                Log.e("error", "prepare() failed")
-            }
-        }
+    private fun setupMediaRecorder() {
+        recorder = MediaRecorder()
+        recorder?.setAudioSource(MediaRecorder.AudioSource.MIC)
+        recorder?.setOutputFormat(MediaRecorder.OutputFormat.THREE_GPP)
+        recorder?.setAudioEncoder(MediaRecorder.AudioEncoder.AMR_NB)
+        recorder?.setOutputFile(getAudioFilePath())
     }
+    private fun getAudioFilePath(): String {
+        return "${externalCacheDir?.absolutePath}/audio_recording.3gp"
+    }
+
     private fun stopRecording() {
-        recorder?.apply {
-            stop()
-            release()
+        binding.btnRecord.visibility = View.VISIBLE
+        binding.btnStop.visibility = View.INVISIBLE
+        recognizer.stopListening()
+        recognizer.destroy()
+        try {
+            recorder?.apply {
+                stop()
+                reset()
+                release()
+            }
+            recorder = null
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
-        recorder = null
         Handler(Looper.getMainLooper()).post {
             Toast.makeText(applicationContext, "Stop", Toast.LENGTH_SHORT).show()
         }
-
     }
+
     private fun startPlaying() {
         Handler(Looper.getMainLooper()).post {
             Toast.makeText(applicationContext, "Play the message", Toast.LENGTH_SHORT).show()
         }
         player = MediaPlayer()
         try {
-            Log.i("path playing",archivo!!.absolutePath)
-            player!!.setDataSource(archivo!!.absolutePath)
-        } catch (e: IOException) {
-        }
-        try {
+            player!!.setDataSource(getAudioFilePath())
             player!!.prepare()
+            player!!.start()
         } catch (e: IOException) {
+            e.printStackTrace()
         }
-        player?.start()
-
-
     }
+    private fun startListening() {
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+        intent.putExtra(
+            RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+            RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+        )
+        intent.putExtra(
+            RecognizerIntent.EXTRA_CALLING_PACKAGE,
+            "com.domain.app"
+        )
 
+        recognizer = SpeechRecognizer.createSpeechRecognizer(this)
+        val mediaRecorderListener: MediaRecorder.OnErrorListener =
+            MediaRecorder.OnErrorListener { _, _, _ ->
+                // Handle media recorder errors if necessary
+            }
+        var listener: RecognitionListener = object : RecognitionListener {
+            override fun onResults(results: Bundle) {
+                val voiceResults = results
+                    .getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                if (voiceResults == null) {
+                    println("No voice results")
+                } else {
+                    for (match in voiceResults) {
+                        formattedSpeech.append(String.format("\n- %s", match.toString()))
+                        binding.textView.text = formattedSpeech.toString()
+                    }
+                }
+            }
+
+            override fun onReadyForSpeech(params: Bundle) {
+                //recorder?.setOutputFile(getAudioFilePath())
+                try {
+                    recorder!!.prepare()
+                    recorder!!.start()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+                println("Ready for speech")
+            }
+
+            /**
+             * ERROR_NETWORK_TIMEOUT = 1;
+             * ERROR_NETWORK = 2;
+             * ERROR_AUDIO = 3;
+             * ERROR_SERVER = 4;
+             * ERROR_CLIENT = 5;
+             * ERROR_SPEECH_TIMEOUT = 6;
+             * ERROR_NO_MATCH = 7;
+             * ERROR_RECOGNIZER_BUSY = 8;
+             * ERROR_INSUFFICIENT_PERMISSIONS = 9;
+             *
+             * @param error code is defined in SpeechRecognizer
+             */
+            override fun onError(error: Int) {
+                System.err.println("Error listening for speech: $error")
+                binding.btnRecord.visibility = View.VISIBLE
+                binding.btnStop.visibility = View.INVISIBLE
+                recognizer.stopListening()
+                recognizer.destroy()
+                try {
+                    recorder!!.stop()
+                    recorder!!.release()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
+            override fun onBeginningOfSpeech() {
+                System.err.println("Error listening for speech: onBeginning")
+                // TODO Auto-generated method stub
+            }
+
+            override fun onBufferReceived(buffer: ByteArray) {
+                System.err.println("Error listening for speech buffer: $buffer")
+                // TODO Auto-generated method stub
+            }
+
+            override fun onEndOfSpeech() {
+                System.err.println("Error listening for speech: oonEndOfSpeech")
+                binding.btnRecord.visibility = View.VISIBLE
+                binding.btnStop.visibility = View.INVISIBLE
+                recognizer.stopListening()
+                recognizer.destroy()
+                try {
+                    recorder!!.stop()
+                    recorder!!.release()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+                // TODO Auto-generated method stub
+            }
+
+            override fun onEvent(eventType: Int, params: Bundle) {
+                // TODO Auto-generated method stub
+            }
+
+            override fun onPartialResults(partialResults: Bundle) {
+                System.err.println("Error listening for speech: onPartialResult")
+                // TODO Auto-generated method stub
+            }
+
+            override fun onRmsChanged(rmsdB: Float) {
+                System.err.println("Error listening for speech rmsdB: $rmsdB")
+                // TODO Auto-generated method stub
+            }
+        }
+        recognizer.setRecognitionListener(listener)
+        recognizer.startListening(intent)
+    }
 }
 
