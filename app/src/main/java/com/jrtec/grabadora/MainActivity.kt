@@ -1,6 +1,8 @@
 package com.jrtec.grabadora
 
 import android.Manifest
+import android.annotation.SuppressLint
+import android.bluetooth.BluetoothDevice
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -13,6 +15,7 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.util.Log
 import android.view.View
+import android.widget.ImageButton
 import android.widget.Toast
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
@@ -43,15 +46,16 @@ class MainActivity : AppCompatActivity() {
         registerReceiver(object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
                 val state = intent.getIntExtra(AudioManager.EXTRA_SCO_AUDIO_STATE, -1)
-                Log.d( "BLUETOOTH","Audio SCO state: $state")
+                Log.d( "BLUETOOTH HOME","Audio SCO state: $state")
                 if (AudioManager.SCO_AUDIO_STATE_CONNECTED == state) {
                     unregisterReceiver(this)
                 }
             }
-        }, IntentFilter(AudioManager.ACTION_SCO_AUDIO_STATE_CHANGED))
+        }, IntentFilter().apply{addAction(AudioManager.ACTION_SCO_AUDIO_STATE_UPDATED)})
 
         Log.d("BLUETOOTH", "starting bluetooth")
         am.startBluetoothSco()
+
 
         if (ContextCompat.checkSelfPermission(
                 applicationContext,
@@ -60,6 +64,8 @@ class MainActivity : AppCompatActivity() {
                 applicationContext, Manifest.permission.RECORD_AUDIO
             ) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(
                 applicationContext, Manifest.permission.READ_EXTERNAL_STORAGE
+            ) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(
+                applicationContext, Manifest.permission.BLUETOOTH_CONNECT
             ) != PackageManager.PERMISSION_GRANTED
         ) {
             ActivityCompat.requestPermissions(
@@ -68,11 +74,20 @@ class MainActivity : AppCompatActivity() {
                     Manifest.permission.WRITE_EXTERNAL_STORAGE,
                     Manifest.permission.READ_EXTERNAL_STORAGE,
                     Manifest.permission.RECORD_AUDIO,
+                    Manifest.permission.BLUETOOTH_CONNECT,
                     Manifest.permission.INTERNET,
                 ),
                 1000
             )
         }
+
+        val filter = IntentFilter().apply {
+            addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
+            addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
+            addAction(AudioManager.ACTION_SCO_AUDIO_STATE_UPDATED)
+        }
+        registerReceiver(broadCastReceiverBluetooth, filter)
+
         requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 1)
         binding.btnRecord.setOnClickListener {
             binding.btnStop.visibility = View.VISIBLE
